@@ -280,3 +280,7 @@ function downloadCSV() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
+
+// Expose functions called from inline HTML onclick handlers
+window.openTab = openTab;
+window.downloadCSV = downloadCSV;

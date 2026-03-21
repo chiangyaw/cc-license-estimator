@@ -6,12 +6,16 @@
  * Each test gets a fresh DOM via beforeEach to avoid state leakage.
  */
 
-const { JSDOM } = require('jsdom');
-const fs = require('fs');
-const path = require('path');
+import { describe, test, expect, beforeEach } from 'vitest';
+import { JSDOM } from 'jsdom';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const htmlContent = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
-const scriptContent = fs.readFileSync(path.resolve(__dirname, '../script.js'), 'utf8');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const htmlContent   = readFileSync(resolve(__dirname, '../index.html'), 'utf8');
+const scriptContent = readFileSync(resolve(__dirname, '../script.js'),  'utf8');
 
 let dom;
 

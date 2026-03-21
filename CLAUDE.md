@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a static web application — a Cortex Cloud License Estimator for Palo Alto Networks. It has no build step, no package manager, and no test framework. Development is done by editing files directly and opening `index.html` in a browser.
+This is a static web application — a Cortex Cloud License Estimator for Palo Alto Networks. It uses **Vite** as the build tool and **Vitest** as the test framework.
 
 ## Files
 
@@ -27,14 +27,19 @@ The core `calculateLicenses()` function works in four steps:
 
 The `RATIOS` object in `script.js` is the single source of truth for all conversion rates. Any licensing rule changes start there.
 
-## Testing
+## Development
 
 ```
-npm install        # first time only
-npm test           # run all tests
+npm install            # first time only
+npm run dev            # local dev server at http://localhost:5173 (hot reload)
+npm run build          # production build → dist/
+npm run preview        # preview the production build locally
+npm test               # run all tests
 npm run test:logic     # logic tests only
 npm run test:security  # security tests only
 ```
+
+`script.js` is loaded as `type="module"`. `openTab` and `downloadCSV` are explicitly assigned to `window` at the bottom of the file so the inline `onclick` handlers in `index.html` can reach them. `CNAME` lives in `public/` so Vite copies it as-is into `dist/`.
 
 **[tests/logic.test.js](tests/logic.test.js)** — loads `index.html` + `script.js` into a fresh jsdom window per test and calls `calculateLicenses()` directly. Covers: validation errors, Posture/Runtime/combined scenarios, MOQ enforcement, Application Security add-on, container image free quota, and workload ratio conversions.
 
