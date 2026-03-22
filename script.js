@@ -44,6 +44,8 @@ document.getElementById('estimator-form').addEventListener('submit', function(e)
     calculateLicenses();
 });
 
+let lastCalculationResult = null;
+
 function calculateLicenses() {
     // --- Workload to Billable Unit Ratios ---
     const RATIOS = {
@@ -83,25 +85,39 @@ function calculateLicenses() {
     };
 
     const resultsElement = document.getElementById('results-section');
-    resultsElement.innerHTML = ''; 
+    const downloadBtn = document.getElementById('download-csv-btn');
+    resultsElement.innerHTML = '';
+    downloadBtn.style.display = 'none';
+    lastCalculationResult = null;
 
     // --- Step 1: Calculate Workloads ---
     
     const unmanagedWorkloadUnits = (inputs['unmanaged-assets'] * RATIOS['unmanaged-assets']);
+
+    // --- Container Image Quota Logic ---
+    const totalDeployedWorkloads = inputs['vms-not-running-containers'] + inputs['vms-running-containers'] + (inputs['caas-managed-containers'] * RATIOS['caas-managed-containers']) ;
+    const CONTAINER_IMAGE_QUOTA = totalDeployedWorkloads * 10;
+    let imagesForBilling = inputs['container-images'];
+
+    if (totalDeployedWorkloads > 0 && inputs['container-images'] > 0) {
+        imagesForBilling = Math.max(0, inputs['container-images'] - CONTAINER_IMAGE_QUOTA);
+    }
+    const containerImageWorkloadUnits = imagesForBilling * RATIOS['container-images'];
+    // --- End Container Image Quota Logic ---
 
     const postureWorkloadUnits = 
         (inputs['cloud-buckets'] * RATIOS['cloud-buckets']) +
         (inputs['managed-cloud-database'] * RATIOS['managed-cloud-database']) +
         (inputs['dbaas-tb-stored'] * RATIOS['dbaas-tb-stored']) +
         (inputs['saas-users'] * RATIOS['saas-users']) +
-        unmanagedWorkloadUnits; 
+        unmanagedWorkloadUnits + 
+        containerImageWorkloadUnits; 
     
     const runtimeWorkloadUnits = 
         (inputs['vms-not-running-containers'] * RATIOS['vms-not-running-containers']) +
         (inputs['vms-running-containers'] * RATIOS['vms-running-containers']) +
         (inputs['caas-managed-containers'] * RATIOS['caas-managed-containers']) +
-        (inputs['serverless-functions'] * RATIOS['serverless-functions']) +
-        (inputs['container-images'] * RATIOS['container-images']);
+        (inputs['serverless-functions'] * RATIOS['serverless-functions']);
     
     const posture_workload_sum = Math.ceil(postureWorkloadUnits);
     const runtime_workload_sum = Math.ceil(runtimeWorkloadUnits);
@@ -110,6 +126,7 @@ function calculateLicenses() {
     const total_workload_sum = posture_workload_sum + runtime_workload_sum;
 
     let resultString = [];
+    let explanationString = ""; // Variable to hold explanations
     const coreSecuritySelected = features.posture || features.runtime;
 
     // --- Step 2: Check for Errors ---
@@ -123,75 +140,64 @@ function calculateLicenses() {
         return;
     }
 
+    // NEW ERROR CHECK: Application Security must be selected if developers > 0
+    if (developer_sum > 0 && !features.application) {
+        resultsElement.innerHTML = '<span class="error">Application Security is not chosen but developers quantity is more than 0. Please select Application Security or set Developers to 0.</span>';
+        return;
+    }
+
     // --- Step 3: Determine Core Security License (Posture/Runtime) ---
     let postureLicense = 0;
     let runtimeLicense = 0;
     
     if (features.posture && !features.runtime) {
-        // Scenario: Only Posture Security is ticked (Existing Logic)
+        // Scenario: Only Posture Security is ticked
         let effectivePostureWorkload = posture_workload_sum + runtime_workload_sum;
 
         if (effectivePostureWorkload > 0) {
             postureLicense = Math.max(effectivePostureWorkload, MOQ);
+            if (effectivePostureWorkload < MOQ) {
+                explanationString = `Total Posture workload (${effectivePostureWorkload}) is lower than MOQ (${MOQ}), hence MOQ is required to be proposed.`;
+            }
         } else {
             postureLicense = 0;
         }
 
     } else if (features.runtime || (features.posture && features.runtime)) {
         // Scenario: Runtime Security is ticked, or both Posture and Runtime are ticked
+        
+        // --- ALLOCATION LOGIC (MOQ must be met by Runtime) ---
 
-        // Rule 1, 3, 4: At least one side fulfills MOQ (>= 200)
-        if (posture_workload_sum >= MOQ || runtime_workload_sum >= MOQ){
-            // If MOQ is met on one side, both sides take their actual workload.
-            postureLicense = posture_workload_sum;
-            runtimeLicense = runtime_workload_sum;
-            
-        // NEW COST-OPTIMIZATION LOGIC (When both are below MOQ)
-        } else if (posture_workload_sum > 0 || runtime_workload_sum > 0) {
-            
-            // Calculate the total required consumption units
-            // Runtime needs runtime_workload_sum licenses (cost 2)
-            // Posture needs posture_workload_sum licenses (cost 1)
-            
-            // --- Determine the allocation of the MOQ (200) ---
-            
-            // 1. Try meeting the MOQ with Posture (cheapest option for minimum coverage)
-            let post_moq_posture_only = Math.max(posture_workload_sum, MOQ);
-            let post_moq_runtime_only = runtime_workload_sum;
-            let cost_option_1 = (post_moq_posture_only * 1) + (post_moq_runtime_only * 2);
-
-            // 2. Try meeting the MOQ with Runtime (most powerful, covers Posture)
-            let runtime_moq_runtime_only = Math.max(runtime_workload_sum, MOQ);
-            
-            // When Runtime fulfills MOQ, the excessive part of the Runtime license covers Posture.
-            let excess_runtime_license = Math.max(0, runtime_moq_runtime_only - runtime_workload_sum);
-            
-            // Posture license consumption is reduced by the excess Runtime license quantity
-            let post_moq_posture_covered = Math.max(0, posture_workload_sum - excess_runtime_license);
-            
-            let cost_option_2 = (post_moq_posture_covered * 1) + (runtime_moq_runtime_only * 2);
-            
-            
-            // --- Compare and Allocate ---
-            if (cost_option_1 <= cost_option_2) {
-                // Option 1 is cheaper or equal: Posture takes the MOQ
-                postureLicense = Math.max(posture_workload_sum, MOQ);
-                runtimeLicense = runtime_workload_sum;
-            } else {
-                // Option 2 is cheaper: Runtime takes the MOQ
-                postureLicense = post_moq_posture_covered;
-                runtimeLicense = runtime_moq_runtime_only;
+        // Runtime License is always max of its workload or MOQ
+        if (runtime_workload_sum > 0) {
+            runtimeLicense = Math.max(runtime_workload_sum, MOQ);
+            if (runtime_workload_sum < MOQ) {
+                explanationString = `Runtime Security is selected. Runtime workload (${runtime_workload_sum}) is below the MOQ, hence the license quantity is set to ${MOQ}.`;
             }
+        } else if (features.runtime) {
+             // If runtime is checked but runtime_workload_sum is 0, we still assume MOQ applies if any other license is requested (e.g., posture is also ticked)
+            runtimeLicense = MOQ;
+            explanationString = `Runtime Security is selected. Runtime workload is 0, hence the MOQ of ${MOQ} is applied.`;
+        }
+        
+        // Posture License is always its actual workload (since Runtime MOQ is now met)
+        // Note: The previous cost optimization rules (Rule 2) are now implicitly handled/replaced by this strict Runtime MOQ rule.
+        postureLicense = posture_workload_sum;
 
-        } else {
-            // Total workload is 0
-            postureLicense = 0;
-            runtimeLicense = 0;
+        if (runtimeLicense === MOQ && runtime_workload_sum === 0 && posture_workload_sum === 0 && !features.posture) {
+            // Only Runtime is ticked, and workloads are 0. Clear explanation for minimum license.
+            explanationString = `Runtime Security is selected. All workloads are 0, hence the MOQ of ${MOQ} is applied.`;
         }
     }
     
 
     // --- Step 4: Output Licenses ---
+
+    // Prepend explanation if one exists
+    if (explanationString) {
+        resultString.push(explanationString);
+        resultString.push("---");
+    }
 
     // Core Licenses
     if (postureLicense > 0) {
@@ -203,8 +209,10 @@ function calculateLicenses() {
 
 
     // Application Security Add-on
-    if (features.application && coreSecuritySelected) {
-        const appSecLicense = developer_sum > 5 ? developer_sum : 5;
+    const appSecLicense = (features.application && coreSecuritySelected)
+        ? (developer_sum > 5 ? developer_sum : 5)
+        : 0;
+    if (appSecLicense > 0) {
         resultString.push(`Application Security License Required: ${appSecLicense}`);
     }
 
@@ -215,4 +223,64 @@ function calculateLicenses() {
     } else {
         resultsElement.innerHTML = resultString.join('\n');
     }
+
+    lastCalculationResult = { inputs, features, postureLicense, runtimeLicense, appSecLicense };
+    downloadBtn.style.display = 'block';
 }
+
+function downloadCSV() {
+    if (!lastCalculationResult) return;
+    const { inputs, features, postureLicense, runtimeLicense, appSecLicense } = lastCalculationResult;
+
+    const q = val => `"${String(val).replace(/"/g, '""')}"`;
+    const row = (...cells) => cells.map(q).join(',');
+
+    const lines = [
+        row('Cortex Cloud License Estimation'),
+        '',
+        row('Features Selected'),
+        row('Feature', 'Selected'),
+        row('Posture Security',    features.posture      ? 'Yes' : 'No'),
+        row('Runtime Security',    features.runtime      ? 'Yes' : 'No'),
+        row('Application Security', features.application ? 'Yes' : 'No'),
+        '',
+        row('Workload Inputs'),
+        row('Workload Type', 'Quantity'),
+        row('VMs (not running containers)',    inputs['vms-not-running-containers']),
+        row('VMs (running containers)',        inputs['vms-running-containers']),
+        row('CaaS (Managed Containers)',       inputs['caas-managed-containers']),
+        row('Serverless Functions',            inputs['serverless-functions']),
+        row('Container Images in Registries',  inputs['container-images']),
+        row('Cloud Buckets',                   inputs['cloud-buckets']),
+        row('Managed Cloud Database (PaaS)',   inputs['managed-cloud-database']),
+        row('DBaaS (TB Stored)',               inputs['dbaas-tb-stored']),
+        row('SaaS Users',                      inputs['saas-users']),
+        row('Developers',                      inputs['developers']),
+        row('Cloud ASM - Unmanaged Services',  inputs['unmanaged-assets']),
+        '',
+        row('License Results'),
+        row('License Type', 'Count'),
+    ];
+
+    if (postureLicense > 0) lines.push(row('Posture Security License', postureLicense));
+    if (runtimeLicense > 0) lines.push(row('Runtime Security License', runtimeLicense));
+    if (appSecLicense  > 0) lines.push(row('Application Security License', appSecLicense));
+    if (postureLicense === 0 && runtimeLicense === 0 && appSecLicense === 0) {
+        lines.push(row('No license required', ''));
+    }
+
+    // BOM ensures correct encoding when opened in Excel
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cortex-cloud-license-estimate.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Expose functions called from inline HTML onclick handlers
+window.openTab = openTab;
+window.downloadCSV = downloadCSV;

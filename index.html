@@ -18,7 +18,7 @@
         </h1>
 
         <p>This is an unofficial web application to help Palo Alto Networks team or partners to estimate the license required for Cortex Cloud consumption. The calculator will not provide a price estimation. Once completed, take the number of license count, and work with your Palo Alto Networks sales representative to complete the commercial quote. For the official information, refer to the 
-            <a href="https://www.paloaltonetworks.com/apps/pan/public/downloadResource?pagePath=/content/pan/en_US/resources/datasheets/metering-licensing-cortex-cloud" target="_blank" class="github-button">
+            <a href="https://www.paloaltonetworks.com/apps/pan/public/downloadResource?pagePath=/content/pan/en_US/resources/datasheets/metering-licensing-cortex-cloud" target="_blank" rel="noopener noreferrer" class="github-button">
                 <i class="github-icon"></i>Cortex Cloud Metering Guide
             </a>.
         </p>
@@ -40,7 +40,8 @@
                 </div>
 
                 <div class="section-title">Workload Quantities</div>
-                
+
+                <div class="license-group-title">Posture / Runtime Security</div>
                 <div class="input-group">
                     <label for="vms-not-running-containers">VMs (not running containers)</label>
                     <input type="number" id="vms-not-running-containers" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
@@ -49,6 +50,7 @@
                     <label for="vms-running-containers">VMs (running containers)</label>
                     <input type="number" id="vms-running-containers" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
                 </div>
+
                 <div class="input-group">
                     <label for="caas-managed-containers">CaaS (Managed Containers)</label>
                     <input type="number" id="caas-managed-containers" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
@@ -57,10 +59,13 @@
                     <label for="serverless-functions">Serverless Functions</label>
                     <input type="number" id="serverless-functions" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
                 </div>
+
+                <div class="license-group-title">Posture Security</div>
                 <div class="input-group">
                     <label for="container-images">Container Images in Registries</label>
                     <input type="number" id="container-images" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
                 </div>
+
                 <div class="input-group">
                     <label for="cloud-buckets">Cloud Buckets</label>
                     <input type="number" id="cloud-buckets" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
@@ -78,12 +83,14 @@
                     <input type="number" id="saas-users" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
                 </div>
                 <div class="input-group">
-                    <label for="developers">Developers</label>
-                    <input type="number" id="developers" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
-                </div>
-                <div class="input-group">
                     <label for="unmanaged-assets">Cloud ASM - Unmanaged Services</label>
                     <input type="number" id="unmanaged-assets" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
+                </div>
+
+                <div class="license-group-title">Application Security</div>
+                <div class="input-group">
+                    <label for="developers">Developers</label>
+                    <input type="number" id="developers" value="0" min="0" onfocus="this.value=''" onblur="if(this.value=='') this.value='0'">
                 </div>
 
                 <button type="submit" id="calculate-btn">Calculate License</button>
@@ -93,6 +100,7 @@
             <div id="results-section">
                 Click "Calculate License" to see the estimated license count.
             </div>
+            <button id="download-csv-btn" onclick="downloadCSV()">Download as CSV</button>
         </div>
 
         <div id="Questions" class="tab-content">
@@ -118,7 +126,7 @@
             <div class="section-title">Sizing Script</div>
             <p>While the estimator above provides a manual calculation, the most accurate method to determine license count is by using an automated script.</p>
             <p>Refer to the unofficial  
-                <a href="https://github.com/chiangyaw/cc-sizing-scripts" target="_blank" class="github-button">
+                <a href="https://github.com/chiangyaw/cc-sizing-scripts" target="_blank" rel="noopener noreferrer" class="github-button">
                     <i class="github-icon"></i>Cortex Cloud Sizing Script Github Page
                 </a>
                  for more information.
@@ -128,9 +136,12 @@
         <div id="About" class="tab-content">
             <div class="section-title">About This Tool</div>
             <p>This license estimator is maintained by the Domain Consultant team based out of Singapore. If you have any feedback or recommendation, feel free to reach out to your Palo Alto Networks sales representative.</p>
+            <p>
+                Use at Your Own Risk. This tool is not responsible for any errors or wrong calculations. Independent verification of all results is strongly recommended.
+            </p>
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>
