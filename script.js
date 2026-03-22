@@ -44,6 +44,8 @@ document.getElementById('estimator-form').addEventListener('submit', function(e)
     calculateLicenses();
 });
 
+let lastCalculationResult = null;
+
 function calculateLicenses() {
     // --- Workload to Billable Unit Ratios ---
     const RATIOS = {
@@ -83,7 +85,10 @@ function calculateLicenses() {
     };
 
     const resultsElement = document.getElementById('results-section');
-    resultsElement.innerHTML = ''; 
+    const downloadBtn = document.getElementById('download-csv-btn');
+    resultsElement.innerHTML = '';
+    downloadBtn.style.display = 'none';
+    lastCalculationResult = null;
 
     // --- Step 1: Calculate Workloads ---
     
@@ -204,8 +209,10 @@ function calculateLicenses() {
 
 
     // Application Security Add-on
-    if (features.application && coreSecuritySelected) {
-        const appSecLicense = developer_sum > 5 ? developer_sum : 5;
+    const appSecLicense = (features.application && coreSecuritySelected)
+        ? (developer_sum > 5 ? developer_sum : 5)
+        : 0;
+    if (appSecLicense > 0) {
         resultString.push(`Application Security License Required: ${appSecLicense}`);
     }
 
@@ -216,4 +223,64 @@ function calculateLicenses() {
     } else {
         resultsElement.innerHTML = resultString.join('\n');
     }
+
+    lastCalculationResult = { inputs, features, postureLicense, runtimeLicense, appSecLicense };
+    downloadBtn.style.display = 'block';
 }
+
+function downloadCSV() {
+    if (!lastCalculationResult) return;
+    const { inputs, features, postureLicense, runtimeLicense, appSecLicense } = lastCalculationResult;
+
+    const q = val => `"${String(val).replace(/"/g, '""')}"`;
+    const row = (...cells) => cells.map(q).join(',');
+
+    const lines = [
+        row('Cortex Cloud License Estimation'),
+        '',
+        row('Features Selected'),
+        row('Feature', 'Selected'),
+        row('Posture Security',    features.posture      ? 'Yes' : 'No'),
+        row('Runtime Security',    features.runtime      ? 'Yes' : 'No'),
+        row('Application Security', features.application ? 'Yes' : 'No'),
+        '',
+        row('Workload Inputs'),
+        row('Workload Type', 'Quantity'),
+        row('VMs (not running containers)',    inputs['vms-not-running-containers']),
+        row('VMs (running containers)',        inputs['vms-running-containers']),
+        row('CaaS (Managed Containers)',       inputs['caas-managed-containers']),
+        row('Serverless Functions',            inputs['serverless-functions']),
+        row('Container Images in Registries',  inputs['container-images']),
+        row('Cloud Buckets',                   inputs['cloud-buckets']),
+        row('Managed Cloud Database (PaaS)',   inputs['managed-cloud-database']),
+        row('DBaaS (TB Stored)',               inputs['dbaas-tb-stored']),
+        row('SaaS Users',                      inputs['saas-users']),
+        row('Developers',                      inputs['developers']),
+        row('Cloud ASM - Unmanaged Services',  inputs['unmanaged-assets']),
+        '',
+        row('License Results'),
+        row('License Type', 'Count'),
+    ];
+
+    if (postureLicense > 0) lines.push(row('Posture Security License', postureLicense));
+    if (runtimeLicense > 0) lines.push(row('Runtime Security License', runtimeLicense));
+    if (appSecLicense  > 0) lines.push(row('Application Security License', appSecLicense));
+    if (postureLicense === 0 && runtimeLicense === 0 && appSecLicense === 0) {
+        lines.push(row('No license required', ''));
+    }
+
+    // BOM ensures correct encoding when opened in Excel
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cortex-cloud-license-estimate.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// Expose functions called from inline HTML onclick handlers
+window.openTab = openTab;
+window.downloadCSV = downloadCSV;
